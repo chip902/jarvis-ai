@@ -9,13 +9,15 @@ load_dotenv()
 
 # Initialize DeepSeek client
 client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com/beta"
+    # api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com/beta"
+    api_key="sk-d4ef177cd56d478da8063a4746448e54", base_url="http://192.168.1.10:3000/ollama/v1"
 )
 
 DEEPSEEK_V3_MODEL = "deepseek-chat"
+OLLAMA_MODEL = "phi4"
 
 
-def prompt(prompt: str, model: str = DEEPSEEK_V3_MODEL) -> str:
+def prompt(prompt: str, model: str = OLLAMA_MODEL) -> str:
     """
     Send a prompt to DeepSeek and get detailed benchmarking response.
     """
@@ -26,7 +28,7 @@ def prompt(prompt: str, model: str = DEEPSEEK_V3_MODEL) -> str:
 
 
 def fill_in_the_middle_prompt(
-    prompt: str, suffix: str, model: str = DEEPSEEK_V3_MODEL
+    prompt: str, suffix: str, model: str = OLLAMA_MODEL
 ) -> str:
     """
     Send a fill-in-the-middle prompt to DeepSeek and get response.
@@ -41,7 +43,7 @@ def fill_in_the_middle_prompt(
     return prompt + response.choices[0].text + suffix
 
 
-def json_prompt(prompt: str, model: str = DEEPSEEK_V3_MODEL) -> dict:
+def json_prompt(prompt: str, model: str = OLLAMA_MODEL) -> dict:
     """
     Send a prompt to DeepSeek and get JSON response.
 
@@ -62,7 +64,7 @@ def json_prompt(prompt: str, model: str = DEEPSEEK_V3_MODEL) -> dict:
 
 
 def prefix_prompt(
-    prompt: str, prefix: str, model: str = DEEPSEEK_V3_MODEL, no_prefix: bool = False
+    prompt: str, prefix: str, model: str = OLLAMA_MODEL, no_prefix: bool = False
 ) -> str:
     """
     Send a prompt to DeepSeek with a prefix constraint and get 'prefix + response'
@@ -88,7 +90,7 @@ def prefix_prompt(
 
 
 def prefix_then_stop_prompt(
-    prompt: str, prefix: str, suffix: str, model: str = DEEPSEEK_V3_MODEL
+    prompt: str, prefix: str, suffix: str, model: str = OLLAMA_MODEL
 ) -> str:
     """
     Send a prompt to DeepSeek with a prefix and suffix constraint and get 'response' only that will have started with prefix and ended with suffix
@@ -116,7 +118,7 @@ def prefix_then_stop_prompt(
 def conversational_prompt(
     messages: List[Dict[str, str]],
     system_prompt: str = "You are a helpful conversational assistant. Respond in a short, concise, friendly manner.",
-    model: str = DEEPSEEK_V3_MODEL,
+    model: str = OLLAMA_MODEL,
 ) -> str:
     """
     Send a conversational prompt to DeepSeek with message history.
