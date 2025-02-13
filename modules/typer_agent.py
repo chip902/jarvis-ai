@@ -8,7 +8,7 @@ from modules.utils import (
     create_session_logger_id,
     setup_logging,
 )
-from modules.deepseek import prefix_prompt
+from modules.deepseek import prefix_prompt, prefix_then_stop_prompt
 from modules.execute_python import execute_uv_python, execute
 from elevenlabs import play
 from elevenlabs.client import ElevenLabs
@@ -23,6 +23,8 @@ class TyperAgent:
         self.elevenlabs_client = ElevenLabs(api_key=os.getenv("ELEVEN_API_KEY"))
         self.previous_successful_requests = []
         self.previous_responses = []
+        self.memory_file = None
+        self.previous_interactions = []
 
     def _validate_markdown(self, file_path: str) -> bool:
         """Validate that file is markdown and has expected structure"""
@@ -119,6 +121,38 @@ class TyperAgent:
             self.logger.error(f"❌ Error building prompt: {str(e)}")
             raise
 
+    def set_memory_file(self, memory_file: str):
+        """Set and validate memory file path"""
+        if not memory_file.endswith((".md", ".markdown")):
+            raise ValueError("Memory file must be a markdown file")
+        self.memory_file = memory_file
+
+    def write_to_memory(self, entry: dict):
+        """Write interaction to memory file in Markdown format"""
+        if not self.memory_file:
+            return
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memory_entry = (
+            f"\n## Interaction - {timestamp}\n\n"
+            f"### Input\n{entry.get('input', '')}\n\n"
+            f"### Response\n{entry.get('response', '')}\n\n"
+            f"### Context\n"
+            f"- Command: `{entry.get('command', '')}`\n"
+            f"- Status: {entry.get('status', '')}\n"
+        )
+
+        if entry.get("output"):
+            memory_entry += f"\n### Output\n```\n{entry['output']}\n```\n"
+
+        if entry.get("error"):
+            memory_entry += f"\n### Error\n```\n{entry['error']}\n```\n"
+
+        with open(self.memory_file, "a") as f:
+            f.write(memory_entry)
+
+        self.previous_interactions.append(entry)
+
     def process_text(
         self,
         text: str,
@@ -127,65 +161,47 @@ class TyperAgent:
         context_files: List[str],
         mode: str,
     ) -> str:
-        """Process text input and handle based on execution mode"""
         try:
-            # Build fresh prompt with current state
             formatted_prompt = self.build_prompt(
                 typer_file, scratchpad, context_files, text
             )
-
-            # Generate command using DeepSeek
-            self.logger.info("🤖 Processing text with DeepSeek...")
             prefix = f"uv run python {typer_file}"
             command = prefix_prompt(prompt=formatted_prompt, prefix=prefix)
 
+            memory_entry = {
+                "input": text,
+                "command": command,
+                "timestamp": datetime.now().isoformat(),
+            }
+
             if command == prefix.strip():
-                self.logger.info(f"🤖 Command not found for '{text}'")
+                memory_entry.update({"status": "failed", "error": "Command not found"})
+                self.write_to_memory(memory_entry)
                 self.speak("I couldn't find that command")
                 return "Command not found"
 
-            # Handle different modes with markdown formatting
             assistant_name = get_config("typer_assistant.assistant_name")
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # command_with_prefix = f"uv run python {typer_file} {command}"
-            command_with_prefix = command
-
-            if mode == "default":
-                result = (
-                    f"\n## {assistant_name} Generated Command ({timestamp})\n\n"
-                    f"> Request: {text}\n\n"
-                    f"```bash\n{command_with_prefix}\n```"
-                )
-                with open(scratchpad, "a") as f:
-                    f.write(result)
-                self.think_speak(f"Command generated")
-                return result
-
-            elif mode == "execute":
-                self.logger.info(f"⚡ Executing command: `{command_with_prefix}`")
-                output = execute(command)
-
-                result = (
-                    f"\n\n## {assistant_name} Executed Command ({timestamp})\n\n"
-                    f"> Request: {text}\n\n"
-                    f"**{assistant_name}'s Command:** \n```bash\n{command_with_prefix}\n```\n\n"
-                    f"**Output:** \n```\n{output}```"
-                )
-                with open(scratchpad, "a") as f:
-                    f.write(result)
-                self.think_speak(f"Command generated and executed")
-                return output
-
-            elif mode == "execute-no-scratch":
-                self.logger.info(f"⚡ Executing command: `{command_with_prefix}`")
-                output = execute(command)
-                self.think_speak(f"Command generated and executed")
-                return output
-
+            if mode == "execute" or mode == "execute-no-scratch":
+                try:
+                    output = execute(command)
+                    memory_entry.update({"status": "executed", "output": output})
+                    self.think_speak(f"Command generated and executed")
+                except Exception as e:
+                    memory_entry.update({"status": "error", "error": str(e)})
+                    self.think_speak(f"Error executing command")
             else:
-                self.think_speak(f"I had trouble running that command")
-                raise ValueError(f"Invalid mode: {mode}")
+                memory_entry.update(
+                    {
+                        "status": "generated",
+                        "explanation": generate_explanation(text, command),
+                    }
+                )
+                self.think_speak(f"Command generated")
+
+            self.write_to_memory(memory_entry)
+            return memory_entry.get("output", command)
 
         except Exception as e:
             self.logger.error(f"❌ Error occurred: {str(e)}")
@@ -214,7 +230,6 @@ class TyperAgent:
         self.speak(response)
 
     def speak(self, text: str):
-
         start_time = time.time()
         model = "eleven_flash_v2_5"
         # model="eleven_flash_v2"
@@ -233,3 +248,17 @@ class TyperAgent:
         duration = time.time() - start_time
         self.logger.info(f"Model {model} completed tts in {duration:.2f} seconds")
         play(audio_bytes)
+
+
+def generate_explanation(request: str, command: str) -> str:
+    prompt = (
+        f"Explain why the command '{command}' was chosen for the request: '{request}'. "
+        "Keep it concise and in a bullet point format if necessary."
+    )
+    explanation = prefix_then_stop_prompt(
+        prompt=prompt,
+        prefix="Explanation:",
+        suffix=".",
+        model=get_config("typer_assistant.brain"),
+    )
+    return explanation

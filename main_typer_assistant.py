@@ -26,6 +26,7 @@ def awaken(
     context_files: List[str] = typer.Option(
         [], "--context", "-c", help="List of context files"
     ),
+    memory_file: str = typer.Option(..., "--memory", "-m", help="Path to memory file"),
     mode: str = typer.Option(
         "default",
         "--mode",
@@ -37,6 +38,8 @@ def awaken(
     # Remove the list concatenation - pass scratchpad as a single string
     assistant, typer_file, _ = TyperAgent.build_agent(typer_file, [scratchpad])
 
+    assistant.set_memory_file(memory_file)
+
     print("🎤 Speak now... (press Ctrl+C to exit)")
 
     recorder = AudioToTextRecorder(
@@ -46,7 +49,7 @@ def awaken(
         post_speech_silence_duration=1.5,  # how long to wait after speech ends before processing
         # compute_type="int8",
         compute_type="float32",
-        model="tiny.en",  # VERY fast (.5s), but not accurate
+        model="small.en",  # VERY fast (.5s), but not accurate
         # model="small.en",  # decent speed (1.5s), improved accuracy
         # Beam size controls how many alternative transcription paths are explored
         # Higher values = more accurate but slower, lower values = faster but less accurate

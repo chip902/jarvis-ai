@@ -1,0 +1,1 @@
+/Users/andrew/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/0\ -\ AI\ Scratchpad/AI\ Scratchpad.md

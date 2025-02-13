@@ -1,0 +1,1 @@
+uv run python main_base_assistant.py chat
